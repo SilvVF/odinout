@@ -59,16 +59,41 @@ FONT :: "Roboto-Regular.ttf"
 FONT_SIZE :: 24
 
 // GAMESTATE
-bar_x: f32 = WINDOW_WIDTH / 2 - BAR_LEN / 2
-bar_dx: f32 = 0
-proj_x: f32 = WINDOW_WIDTH / 2 - PROJ_SIZE / 2
-proj_y: f32 = BAR_Y - BAR_THICCNESS / 2 - PROJ_SIZE
-proj_dx: f32 = 1
-proj_dy: f32 = 1
+INIT_BAR_X :: WINDOW_WIDTH / 2 - BAR_LEN / 2
+INIT_BAR_DX :: 0
+INIT_PROJ_X :: WINDOW_WIDTH / 2 - PROJ_SIZE / 2
+INIT_PROJ_Y :: BAR_Y - BAR_THICCNESS / 2 - PROJ_SIZE
+INIT_PROJ_DX :: 1
+INIT_PROJ_DY :: 1
+
+bar_x: f32 = INIT_BAR_X
+bar_dx: f32 = INIT_BAR_DX
+proj_x: f32 = INIT_PROJ_X
+proj_y: f32 = INIT_PROJ_Y
+proj_dx: f32 = INIT_PROJ_DX
+proj_dy: f32 = INIT_PROJ_DY
 quit := false
 pause := false
 started := false
+gameover := false
+lives := 3
 targets_pool := init_targets()
+
+reset_game_state :: proc() {
+	bar_x = INIT_BAR_X
+	bar_dx = INIT_BAR_DX
+	proj_x = INIT_PROJ_X
+	proj_y = INIT_PROJ_Y
+	proj_dx = INIT_PROJ_DX
+	proj_dy = INIT_PROJ_DY
+	quit = false
+	pause = false
+	started = false
+
+	for &target in targets_pool {
+		target.dead = false
+	}
+}
 
 Target :: struct {
 	x, y: f32,
@@ -111,7 +136,10 @@ target_rect :: proc(target: Target) -> SDL.Rect {
 }
 
 pause_text: Text
+game_over_text: Text
+got_text_init := false
 text_init := false
+
 
 render :: proc(renderer: ^SDL.Renderer, font: ^TTF.Font) {
 
@@ -124,6 +152,15 @@ render :: proc(renderer: ^SDL.Renderer, font: ^TTF.Font) {
 		pause_text.dest.x = (WINDOW_WIDTH / 2) - (pause_text.dest.w / 2)
 		pause_text.dest.y = (WINDOW_HEIGHT / 2) - (pause_text.dest.h)
 		SDL.RenderCopy(renderer, pause_text.tex, nil, &pause_text.dest)
+	}
+	if gameover {
+		if !got_text_init {
+			game_over_text = create_text("Game Over", 1, font, renderer)
+			got_text_init = true
+		}
+		game_over_text.dest.x = (WINDOW_WIDTH / 2) - (game_over_text.dest.w / 2)
+		game_over_text.dest.y = (WINDOW_HEIGHT / 2) - (game_over_text.dest.h)
+		SDL.RenderCopy(renderer, game_over_text.tex, nil, &game_over_text.dest)
 	}
 
 	set_color(renderer, PROJ_COLOR)
@@ -140,6 +177,16 @@ render :: proc(renderer: ^SDL.Renderer, font: ^TTF.Font) {
 			target_r := target_rect(target)
 			SDL.RenderFillRect(renderer, &target_r)
 		}
+	}
+	set_color(renderer, PROJ_COLOR)
+	for i in 0 ..< lives {
+		rect := new_rect(
+			x = f32(i) * (PROJ_SIZE + TARGET_PADDING_X) + TARGET_PADDING_X,
+			y = WINDOW_HEIGHT - TARGET_PADDING_Y,
+			w = PROJ_SIZE,
+			h = PROJ_SIZE,
+		)
+		SDL.RenderFillRect(renderer, &rect)
 	}
 }
 
@@ -187,10 +234,22 @@ horz_collision :: proc(dt: f32) {
 
 vert_collision :: proc(dt: f32) {
 	proj_wish_y: f32 = proj_y + proj_dy * PROJ_SPEED * dt
-	if proj_wish_y < 0 || proj_wish_y + PROJ_SIZE > WINDOW_HEIGHT {
+	if proj_wish_y < 0 {
 		proj_dy *= -1
 		return
 	}
+
+	if proj_wish_y + PROJ_SIZE > WINDOW_HEIGHT {
+		reset_game_state()
+		lives -= 1
+		if lives <= 0 {
+			lives = 3
+			gameover = true
+		}
+		return
+	}
+
+
 	proj_wish_r := proj_rect(proj_x, proj_wish_y)
 	bar_r := bar_rect(bar_x)
 
@@ -285,6 +344,7 @@ main :: proc() {
 			bar_dx += -1
 			if !started {
 				started = true
+				gameover = false
 				proj_dx = -1
 			}
 		}
@@ -292,8 +352,20 @@ main :: proc() {
 			bar_dx += 1
 			if !started {
 				started = true
+				gameover = false
 				proj_dx = 1
 			}
+		}
+
+		allDead := true
+		for target in targets_pool {
+			if !target.dead {
+				allDead = false
+			}
+		}
+
+		if allDead || keyboard[SDL.SCANCODE_R] != 0 {
+			reset_game_state()
 		}
 
 		update(DELTA_TIME_SEC)
